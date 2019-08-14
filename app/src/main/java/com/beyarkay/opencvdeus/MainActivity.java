@@ -311,6 +311,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         ImageAnalysis imageAnalysis = new ImageAnalysis(imageAnalysisConfig);
 
+
+        //TODO STU THIS IS WHERE THE GRUNT WORK HAPPENS
         imageAnalysis.setAnalyzer(
                 new ImageAnalysis.Analyzer() {
                     @SuppressLint("DefaultLocale")
@@ -332,7 +334,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         double thresh_max = 255.0;
                         double thresh = 200;
 
-                        // Insert code to get the locations of the corners here
+                        // TODO BOYD needs to insert code to get the locations of the corners here
 
                         Mat grey = new Mat();
                         Imgproc.cvtColor(matrix, grey, Imgproc.COLOR_RGB2GRAY);
@@ -347,45 +349,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         Utils.matToBitmap(canny, bitmap);
 
 
+                        // Basically, try to find the corners. If you can't find any, then just display the Canny edges
                         Mat corners = detector.getCorners();
                         if (corners != null && corners.dims() == 2) {
                             Utils.matToBitmap(corners, bitmap);
                         }
 
-//                        Log.d(TAG, Arrays.toString(corners));
-
-                        //bluring image to filter small noises.
-//                        Imgproc.GaussianBlur(matrix, matrix, new org.opencv.core.Size(5, 5), 0);
-
-                        //converting blured image from BGR to HSV
-//                        Imgproc.cvtColor(matrix, matrix, Imgproc.COLOR_BGR2HSV);
-
-                        //filtering pixels based on given HSV color range
-
-
-//                        Core.inRange(
-//                                matrix,
-//                                new Scalar(minHue, minSat, minVal),
-//                                new Scalar(maxHue, maxSat, maxVal),
-//                                matrix);
-
-//                        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2HSV);  // Saturation is 0..255
-//
-//                        Scalar saturation_min = new Scalar(30.0, 240.0, 240.0);
-//                        Scalar saturation_max = new Scalar(80.0, 255.0, 255.0);
-//
-//
-//                        Core.inRange(mat, saturation_min, saturation_max, mat);
-//                        Imgproc.threshold(
-//                                mat,
-//                                mat,
-//                                100,
-//                                255,
-//                                Imgproc.THRESH_BINARY);
-
-
-//                        Imgproc.cvtColor(mat, mat, currentImageType);
-//                        Utils.matToBitmap(matrix, bitmap);
+                        // Next, update the bitmap to be the processed image
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
