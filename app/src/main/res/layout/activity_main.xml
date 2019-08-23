@@ -32,7 +32,7 @@
         android:layout_margin="4dp"
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent"
-        android:visibility="gone">
+        android:visibility="visible">
 
         <LinearLayout
             android:id="@+id/llHue"
@@ -80,8 +80,8 @@
                     style="@style/Widget.AppCompat.SeekBar.Discrete"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="255"
-                    android:progress="240" />
+                    android:max="5"
+                    android:progress="3" />
             </LinearLayout>
 
         </LinearLayout>
@@ -91,7 +91,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/white_transparent"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:visibility="visible">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -143,7 +144,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/white_transparent"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"

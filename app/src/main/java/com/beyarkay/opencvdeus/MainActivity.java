@@ -18,7 +18,7 @@ import androidx.core.content.ContextCompat;
 import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.Color;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.os.Bundle;
 import android.os.Environment;
@@ -43,14 +43,14 @@ import android.widget.Toast;
 
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
-import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
@@ -158,6 +158,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         SeekBar sbValMax = findViewById(R.id.sbValMax);
         sbValMax.setOnSeekBarChangeListener(sbListener);
+
+        sbHueMin.setProgress(150);
+        sbHueMax.setProgress(2);
+        sbSatMin.setProgress(190);
+        sbSatMax.setProgress(80);
 
 
         if (allPermissionsGranted()) {
@@ -312,7 +317,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         ImageAnalysis imageAnalysis = new ImageAnalysis(imageAnalysisConfig);
 
 
-        //TODO STU THIS IS WHERE THE GRUNT WORK HAPPENS
         imageAnalysis.setAnalyzer(
                 new ImageAnalysis.Analyzer() {
                     @SuppressLint("DefaultLocale")
@@ -326,40 +330,80 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         if (bitmap == null)
                             return;
 
-                        Mat matrix = new Mat();
-                        Utils.bitmapToMat(bitmap, matrix);
-                        QRDetector detector = new QRDetector(matrix);
-                        double canny_thresh2 = 200.0;
-                        double canny_thresh1 = 75.0;
-                        double thresh_max = 255.0;
-                        double thresh = 200;
+                        Mat original = new Mat();
+                        Utils.bitmapToMat(bitmap, original);
+                        QRDetector detector = new QRDetector(original);
 
-                        // TODO BOYD needs to insert code to get the locations of the corners here
+                        /*
+                        Good values for constants seem to be:
+                        thresh = 150
+                        depth = 2
+                        canny1 = 190
+                        canny2 = 80
+                         */
+
+
+                        double canny_thresh2 = minSat;
+                        double canny_thresh1 = maxSat;
+                        double thresh_max = 255;
+                        int depth = maxHue;
+                        double thresh = minHue;
+
 
                         Mat grey = new Mat();
-                        Imgproc.cvtColor(matrix, grey, Imgproc.COLOR_RGB2GRAY);
+                        Imgproc.cvtColor(original, grey, Imgproc.COLOR_RGB2GRAY);
 
-                        Mat thresholded = new Mat();
-                        Imgproc.threshold(grey, thresholded, thresh, thresh_max, Imgproc.THRESH_BINARY);
+                        Mat blur = new Mat();
+                        Imgproc.blur(grey, blur, new org.opencv.core.Size(5, 5));
 
+                        Mat threshold = new Mat();
+                        Imgproc.threshold(blur, threshold, thresh, thresh_max, Imgproc.THRESH_BINARY);
 
                         Mat canny = new Mat();
-                        Imgproc.Canny(thresholded, canny, canny_thresh1, canny_thresh2);
+                        Imgproc.Canny(threshold, canny, canny_thresh1 / 255, canny_thresh2 / 255);
 
-                        Utils.matToBitmap(canny, bitmap);
+                        Mat hierarchy = new Mat();
+                        List<MatOfPoint> contours = new ArrayList<>();
+                        Imgproc.findContours(canny, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
 
 
-                        // Basically, try to find the corners. If you can't find any, then just display the Canny edges
-                        Mat corners = detector.getCorners();
-                        if (corners != null && corners.dims() == 2) {
-                            Utils.matToBitmap(corners, bitmap);
+
+                        List<MatOfPoint> deepContours = new ArrayList<>();
+
+                        for (int i = 0; i < contours.size(); i++) {
+                            int current_child = i;
+                            int current_depth = 0;
+
+                            while(hierarchy.get(0, current_child)[3] != -1){
+                                current_child = (int) hierarchy.get(0, current_child)[3];
+                                current_depth ++;
+                            }
+
+                            if (current_depth >= depth) {
+                                deepContours.add(contours.get(i));
+                            }
                         }
+
+                        Mat drawnContours = Mat.zeros(original.size(), CvType.CV_8UC3);
+                        for (int i = 0; i < deepContours.size(); i++) {
+                            Imgproc.drawContours(drawnContours, deepContours, i, new Scalar(255, 200, 0));
+                        }
+
+
+                        Mat[] matrixes = new Mat[]{
+                                blur,
+                                threshold,
+                                canny,
+                                drawnContours
+                        };
+
+                        final Bitmap result = combineMatrixesToBitmap(matrixes);
 
                         // Next, update the bitmap to be the processed image
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                ivBitmap.setImageBitmap(bitmap);
+                                ivBitmap.setImageBitmap(result);
                             }
                         });
 
@@ -369,6 +413,40 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         return imageAnalysis;
 
+    }
+
+    private static Bitmap combineMatrixesToBitmap(Mat[] matrices) {
+        Bitmap[] bitmaps = new Bitmap[4];
+
+        for (int i = 0; i < matrices.length; i++) {
+            bitmaps[i] = Bitmap.createBitmap(matrices[i].width(), matrices[i].height(), Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(matrices[i], bitmaps[i]);
+        }
+
+        Bitmap result;
+        try {
+            if (bitmaps[0] == null) {
+                return null;
+            }
+            int bgWidth = bitmaps[0].getWidth();
+            int bgHeight = bitmaps[0].getHeight();
+
+            for (int i = 0; i < bitmaps.length; i++) {
+
+            }
+
+            result = Bitmap.createBitmap(bgWidth, bgHeight, Bitmap.Config.ARGB_8888);
+            Canvas cv = new Canvas(result);
+            cv.drawBitmap(bitmaps[0], 0, 0, null);
+            cv.drawBitmap(bitmaps[1], (bgWidth) / 2, 0, null);
+            cv.drawBitmap(bitmaps[2], 0, (bgHeight / 2), null);
+            cv.drawBitmap(bitmaps[3], (bgWidth) / 2,  (bgHeight / 2), null);
+            cv.save();
+            cv.restore();
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void showAcceptedRejectedButton(boolean acceptedRejected) {

@@ -7,6 +7,7 @@ import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
 import java.util.ArrayList;
@@ -16,35 +17,34 @@ import java.util.List;
 class QRDetector {
     private static final String TAG = QRDetector.class.toString();
     private Mat src;
-    private double thresh;
-    private double thresh_max;
-    private double canny_thresh1;
-    private double canny_thresh2;
 
 
     QRDetector(Mat src) {
-        canny_thresh2 = 200.0;
-        canny_thresh1 = 50.0;
-        thresh_max = 255.0;
-        thresh = 200;
+
+//        Hysteresis: The final step. Canny does use two thresholds (upper and lower):
+//        If a pixel gradient is higher than the upper threshold, the pixel is accepted as an edge
+//        If a pixel gradient value is below the lower threshold, then it is rejected.
+//                If the pixel gradient is between the two thresholds, then it will be accepted only if it is connected to a pixel that is above the upper threshold.
+//        Canny recommended a upper:lower ratio between 2:1 and 3:1.
+        //        thresh = 200;
+
         this.src = src;
     }
 
-    public Mat getCorners() {
+    public Mat getCorners(int depth, double canny_thresh1, double canny_thresh2) {
         double[] corners = new double[4];
 
-        Mat grey = new Mat();
-        Imgproc.cvtColor(this.src, grey, Imgproc.COLOR_RGB2GRAY);
+        Mat matrix = new Mat();
+        Imgproc.cvtColor(this.src, matrix, Imgproc.COLOR_RGB2GRAY);
 
-        Mat thresholded = new Mat();
-        Imgproc.threshold(grey, thresholded, this.thresh, this.thresh_max, Imgproc.THRESH_BINARY);
+        Imgproc.blur(matrix, matrix, new Size(5, 5));
 
-        Mat canny = new Mat();
-        Imgproc.Canny(thresholded, canny, this.canny_thresh1, this.canny_thresh2);
+        Mat processed = new Mat();
+        Imgproc.Canny(matrix, processed, canny_thresh1 / 255, canny_thresh2 / 255);
 
         Mat heirarcy = new Mat();
         List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(canny, contours, heirarcy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+        Imgproc.findContours(processed, contours, heirarcy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
 
 
         List<Integer> marker_indexes = new ArrayList<>();
@@ -57,45 +57,37 @@ class QRDetector {
 //            System.out.println(Arrays.toString(heirarcy.get(j, 0)));
 
             /*
-            Heirarch is an array of size Nx1 (col x row), where N is the number of contours found
-            Each of the N elements is in turn a 4x1 double[]
-            These elements are the ids of next, previous, parent, first_child, respectively
+            Heirarch is an 2D array of size 1xN (row x col), where N is the number of contours found
+            Each of the N elements is in turn a double[4]
+            Each element in the double[4] is the id of:
+                    [0] next,
+                    [1] previous,
+                    [2] parent,
+                    [3] and first_child, respectively
             a negative id means that that object doesn't exist
              */
+
+            // while the current child has a parent
             while (heirarcy.get(0, j)[2] != -1) {
                 j = (int) heirarcy.get(0, j)[2];
                 count++;
             }
-            if (count >= 3) {
+            if (count >= depth) {
                 marker_indexes.add(i);
             }
 
 
         }
-
-        if (marker_indexes.size() < 3) {
-            Log.e(TAG, "Number of detected markers is less than 3");
-        } else {
-//            marker_indexes = marker_indexes.subList(marker_indexes.size() - 3, marker_indexes.size());
-        }
-
-
+        Mat withContours = Mat.zeros(this.src.size(), CvType.CV_8UC3);
         for (int i = 0; i < marker_indexes.size(); i++) {
             goodContours.add(contours.get(marker_indexes.get(i)));
         }
 
-
-
-        Mat withContours = Mat.zeros(this.src.size(), CvType.CV_8UC3);
-
-        if (goodContours.size() == 0) {
-            return null;
-        }
-
-
         for (int i = 0; i < goodContours.size(); i++) {
-            Imgproc.drawContours(withContours, goodContours, i, new Scalar(200, 150, 200));
+            Imgproc.drawContours(withContours, goodContours, i, new Scalar(255, 191, 0));
         }
+
+
         return withContours;
 
 
