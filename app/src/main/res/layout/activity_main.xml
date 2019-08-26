@@ -59,7 +59,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:max="255"
-                    android:progress="10" />
+                    android:progress="@string/default_threshold" />
             </LinearLayout>
 
 
@@ -73,15 +73,15 @@
                     android:id="@+id/tvHueMax"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Value" />
+                    android:text="@string/value" />
 
                 <SeekBar
                     android:id="@+id/sbHueMax"
                     style="@style/Widget.AppCompat.SeekBar.Discrete"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="5"
-                    android:progress="3" />
+                    android:max="8"
+                    android:progress="@string/default_depth" />
             </LinearLayout>
 
         </LinearLayout>

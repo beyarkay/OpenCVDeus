@@ -8,4 +8,7 @@
     <string name="lab">LAB</string>
     <string name="b_and_w">B And W</string>
     <string name="spot_the_bot">Spot The Bot</string>
+    <string name="value">Value</string>
+    <string name="default_depth">5</string>
+    <string name="default_threshold">150</string>
 </resources>

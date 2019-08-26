@@ -43,11 +43,14 @@ import android.widget.Toast;
 
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
+import org.opencv.imgproc.Moments;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -349,23 +352,32 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         int depth = maxHue;
                         double thresh = minHue;
 
+                        boolean OVERRIDE = true;
+
+                        if (OVERRIDE) {
+//                            thresh = 150;
+                            thresh_max = 255;
+                            depth = 5;
+                            canny_thresh2 = 190;
+                            canny_thresh1 = 80;
+                        }
+
 
                         Mat grey = new Mat();
                         Imgproc.cvtColor(original, grey, Imgproc.COLOR_RGB2GRAY);
 
-                        Mat blur = new Mat();
-                        Imgproc.blur(grey, blur, new org.opencv.core.Size(5, 5));
+                        Mat blurMat = new Mat();
+                        Imgproc.blur(grey, blurMat, new org.opencv.core.Size(5, 5));
 
-                        Mat threshold = new Mat();
-                        Imgproc.threshold(blur, threshold, thresh, thresh_max, Imgproc.THRESH_BINARY);
+                        Mat thresholdMat = new Mat();
+                        Imgproc.threshold(blurMat, thresholdMat, thresh, thresh_max, Imgproc.THRESH_BINARY);
 
-                        Mat canny = new Mat();
-                        Imgproc.Canny(threshold, canny, canny_thresh1 / 255, canny_thresh2 / 255);
+                        Mat cannyMat = new Mat();
+                        Imgproc.Canny(thresholdMat, cannyMat, canny_thresh1 / 255, canny_thresh2 / 255);
 
                         Mat hierarchy = new Mat();
                         List<MatOfPoint> contours = new ArrayList<>();
-                        Imgproc.findContours(canny, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
-
+                        Imgproc.findContours(cannyMat, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
 
 
                         List<MatOfPoint> deepContours = new ArrayList<>();
@@ -374,9 +386,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             int current_child = i;
                             int current_depth = 0;
 
-                            while(hierarchy.get(0, current_child)[3] != -1){
+                            while (hierarchy.get(0, current_child)[3] != -1) {
                                 current_child = (int) hierarchy.get(0, current_child)[3];
-                                current_depth ++;
+                                current_depth++;
                             }
 
                             if (current_depth >= depth) {
@@ -384,21 +396,107 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             }
                         }
 
-                        Mat drawnContours = Mat.zeros(original.size(), CvType.CV_8UC3);
+                        Mat contourMat = Mat.zeros(original.size(), CvType.CV_8UC3);
                         for (int i = 0; i < deepContours.size(); i++) {
-                            Imgproc.drawContours(drawnContours, deepContours, i, new Scalar(255, 200, 0));
+                            Imgproc.drawContours(contourMat, deepContours, i, new Scalar(255, 200, 0));
+                        }
+
+
+                        List<Moments> moments = new ArrayList<>();
+                        /*
+                        A Moment is defined with i, j being two powers in this equation:
+                            m_ji = foreach x (foreach y ( array[x, y] * x^i * y^j)
+
+                            this means that m_00 is simply the sum of all pixel values in an image
+
+                        Usually these results are normalised to the mean,
+                        to stop large numbers from having an effect:
+                            mu_ji = foreach x (foreach y ( array[x, y] * (x - x_mean)^i * (y - y_mean)^j)
+                         */
+
+                        List<Point> centres = new ArrayList<>();
+                        for (int i = 0; i < deepContours.size(); i++) {
+                            moments.add(Imgproc.moments(deepContours.get(i)));
+                            Log.d(TAG, moments.get(i).toString());
+
+                            //Avoid division by zero:
+                            if (moments.get(i).m00 != 0.0) {
+                                centres.add(new Point(
+                                        (int) (moments.get(i).m10 / moments.get(i).m00),
+                                        (int) (moments.get(i).m01 / moments.get(i).m00)));
+                            } else {
+                                centres.add(new Point(0, 0));
+                            }
+                            Imgproc.circle(blurMat, centres.get(i), 5, new Scalar(255, 87, 51));
+                        }
+
+                        if (centres.size() == 3) {
+                            Point A = centres.get(0);
+                            Point B = centres.get(1);
+                            Point C = centres.get(2);
+
+                            double AB = distanceP2P(A, B);
+                            double BC = distanceP2P(B, C);
+                            double CA = distanceP2P(C, A);
+
+                            Imgproc.line(thresholdMat, A, B, new Scalar(255, 87, 51));
+                            Imgproc.line(thresholdMat, B, C, new Scalar(255, 87, 51));
+                            Imgproc.line(thresholdMat, C, A, new Scalar(255, 87, 51));
+                            Point corner = null;
+                            Point CW = null;
+                            Point CCW = null;
+
+                            //Find the vertex of triangle ABC that isn't part of the longest side:
+                            if (AB > BC && AB > CA) {
+                                //A and B are the acute corners of the triangle
+                                corner = C;
+                                // Don't bother setting these intelligently just yet
+                                CW = A;
+                                CCW = B;
+
+                            } else if (BC > AB && BC > CA) {
+                                //B and C are the acute corners of the triangle
+                                corner = A;
+                                // Don't bother setting these intelligently just yet
+                                CW = C;
+                                CCW = B;
+                            } else if (CA > AB && CA > BC) {
+                                //C and A are the acute corners of the triangle
+                                corner = B;
+                                // Don't bother setting these intelligently just yet
+                                CW = A;
+                                CCW = C;
+                            }
+                            assert CW != null && CCW != null && corner != null;
+
+                            // Construct Point D as a parallelogram, starting from the CW Point
+                            Point D = new Point(CW.x + (CCW.x - corner.x),
+                                    CW.y + (CCW.y - corner.y));
+
+                            Imgproc.line(thresholdMat, CW, D, new Scalar(255, 87, 51));
+                            Imgproc.line(thresholdMat, CCW, D, new Scalar(255, 87, 51));
+
+
+
+
+                        } else {
+                            Imgproc.putText(contourMat,
+                                    "Too Many Points: " + centres.size(),
+                                    new Point(contourMat.width() / 2, contourMat.height() / 2),
+                                    Core.FONT_HERSHEY_PLAIN,
+                                    1,
+                                    new Scalar(255, 58, 88),
+                                    4);
                         }
 
 
                         Mat[] matrixes = new Mat[]{
-                                blur,
-                                threshold,
-                                canny,
-                                drawnContours
+                                blurMat,
+                                thresholdMat,
+                                cannyMat,
+                                contourMat
                         };
-
                         final Bitmap result = combineMatrixesToBitmap(matrixes);
-
                         // Next, update the bitmap to be the processed image
                         runOnUiThread(new Runnable() {
                             @Override
@@ -413,6 +511,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         return imageAnalysis;
 
+    }
+
+    private static double distanceP2P(Point p1, Point p2) {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
     private static Bitmap combineMatrixesToBitmap(Mat[] matrices) {
@@ -440,7 +542,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             cv.drawBitmap(bitmaps[0], 0, 0, null);
             cv.drawBitmap(bitmaps[1], (bgWidth) / 2, 0, null);
             cv.drawBitmap(bitmaps[2], 0, (bgHeight / 2), null);
-            cv.drawBitmap(bitmaps[3], (bgWidth) / 2,  (bgHeight / 2), null);
+            cv.drawBitmap(bitmaps[3], (bgWidth) / 2, (bgHeight / 2), null);
             cv.save();
             cv.restore();
             return result;
