@@ -42,12 +42,17 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.opencv.android.OpenCVLoader;
+import org.opencv.calib3d.Calib3d;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDouble;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point;
+import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.imgproc.Moments;
@@ -163,7 +168,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         sbValMax.setOnSeekBarChangeListener(sbListener);
 
         sbHueMin.setProgress(150);
-        sbHueMax.setProgress(2);
+        sbHueMax.setProgress(5);
         sbSatMin.setProgress(190);
         sbSatMax.setProgress(80);
 
@@ -326,8 +331,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void analyze(ImageProxy image, int rotationDegrees) {
                         //Analyzing live camera feed begins.
-
-
                         final Bitmap bitmap = textureView.getBitmap();
 
                         if (bitmap == null)
@@ -335,7 +338,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                         Mat original = new Mat();
                         Utils.bitmapToMat(bitmap, original);
-                        QRDetector detector = new QRDetector(original);
+//                        QRDetector detector = new QRDetector(original);
 
                         /*
                         Good values for constants seem to be:
@@ -351,15 +354,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         double thresh_max = 255;
                         int depth = maxHue;
                         double thresh = minHue;
+                        float QR_CODE_SIZE_METERS = 0.045f;
 
-                        boolean OVERRIDE = true;
 
-                        if (OVERRIDE) {
-//                            thresh = 150;
-                            thresh_max = 255;
+                        if (thresh == 0.0) {
+                            thresh = 150;
+                        }
+                        if (depth == 0) {
                             depth = 5;
-                            canny_thresh2 = 190;
-                            canny_thresh1 = 80;
                         }
 
 
@@ -378,6 +380,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         Mat hierarchy = new Mat();
                         List<MatOfPoint> contours = new ArrayList<>();
                         Imgproc.findContours(cannyMat, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+
+                        Imgproc.cvtColor(grey, grey, Imgproc.COLOR_GRAY2RGB);
+                        Imgproc.cvtColor(blurMat, blurMat, Imgproc.COLOR_GRAY2RGB);
+                        Imgproc.cvtColor(thresholdMat, thresholdMat, Imgproc.COLOR_GRAY2RGB);
 
 
                         List<MatOfPoint> deepContours = new ArrayList<>();
@@ -399,6 +405,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         Mat contourMat = Mat.zeros(original.size(), CvType.CV_8UC3);
                         for (int i = 0; i < deepContours.size(); i++) {
                             Imgproc.drawContours(contourMat, deepContours, i, new Scalar(255, 200, 0));
+//                            Imgproc.drawContours(grey, deepContours, i, new Scalar(255, 200, 0));
                         }
 
 
@@ -419,7 +426,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             moments.add(Imgproc.moments(deepContours.get(i)));
                             Log.d(TAG, moments.get(i).toString());
 
-                            //Avoid division by zero:
+                            // Avoid division by zero
                             if (moments.get(i).m00 != 0.0) {
                                 centres.add(new Point(
                                         (int) (moments.get(i).m10 / moments.get(i).m00),
@@ -427,7 +434,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             } else {
                                 centres.add(new Point(0, 0));
                             }
-                            Imgproc.circle(blurMat, centres.get(i), 5, new Scalar(255, 87, 51));
+                            Imgproc.circle(blurMat, centres.get(i), 5, new Scalar(255, 200, 0));
                         }
 
                         if (centres.size() == 3) {
@@ -439,57 +446,172 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             double BC = distanceP2P(B, C);
                             double CA = distanceP2P(C, A);
 
-                            Imgproc.line(thresholdMat, A, B, new Scalar(255, 87, 51));
-                            Imgproc.line(thresholdMat, B, C, new Scalar(255, 87, 51));
-                            Imgproc.line(thresholdMat, C, A, new Scalar(255, 87, 51));
-                            Point corner = null;
-                            Point CW = null;
-                            Point CCW = null;
+                            /*
+                            Notation for the 4 corners of the QR Code:
+                            The four corners of the QR code are labeled as through centred
+                            at the origin, with sides 1 unit long, and with the empty corner
+                            at (1, 1)
+                            +---------------------+
+                            | +-+            p1_1 |
+                            | | |                 |
+                            | +-+                 |
+                            |                     |
+                            |                     |
+                            |                     |
+                            | +-+            +-+  |
+                            | | |            | |  |
+                            | +-+            +-+  |
+                            +---------------------+
+
+                                      ||
+                                      ||
+                                      ||
+                                      \/
+
+                            +---------------------+
+                            | p0_1           p1_1 |
+                            |                     |
+                            |                     |
+                            |                     |
+                            |                     |
+                            |                     |
+                            |                     |
+                            |                     |
+                            | p0_0           p1_0 |
+                            +---------------------+
+
+                            */
+                            Point p0_0 = null;
+                            Point p0_1 = null;
+                            Point p1_0 = null;
+                            Point p1_1;
+
 
                             //Find the vertex of triangle ABC that isn't part of the longest side:
                             if (AB > BC && AB > CA) {
                                 //A and B are the acute corners of the triangle
-                                corner = C;
+                                p0_0 = C;
                                 // Don't bother setting these intelligently just yet
-                                CW = A;
-                                CCW = B;
+                                p0_1 = A;
+                                p1_0 = B;
 
                             } else if (BC > AB && BC > CA) {
                                 //B and C are the acute corners of the triangle
-                                corner = A;
+                                p0_0 = A;
                                 // Don't bother setting these intelligently just yet
-                                CW = C;
-                                CCW = B;
+                                p0_1 = C;
+                                p1_0 = B;
                             } else if (CA > AB && CA > BC) {
                                 //C and A are the acute corners of the triangle
-                                corner = B;
+                                p0_0 = B;
                                 // Don't bother setting these intelligently just yet
-                                CW = A;
-                                CCW = C;
+                                p0_1 = A;
+                                p1_0 = C;
                             }
-                            assert CW != null && CCW != null && corner != null;
+                            assert p0_1 != null && p1_0 != null && p0_0 != null;
 
-                            // Construct Point D as a parallelogram, starting from the CW Point
-                            Point D = new Point(CW.x + (CCW.x - corner.x),
-                                    CW.y + (CCW.y - corner.y));
+//                             Construct Point D as a parallelogram, starting from the CW Point
+                            p1_1 = new Point(p0_1.x + (p1_0.x - p0_0.x),
+                                    p0_1.y + (p1_0.y - p0_0.y));
 
-                            Imgproc.line(thresholdMat, CW, D, new Scalar(255, 87, 51));
-                            Imgproc.line(thresholdMat, CCW, D, new Scalar(255, 87, 51));
-
-
-
+                            Imgproc.line(thresholdMat, p0_0, p1_0, new Scalar(255, 200, 0), 3);
+                            Imgproc.line(thresholdMat, p1_0, p1_1, new Scalar(255, 200, 0), 3);
+                            Imgproc.line(thresholdMat, p1_1, p0_1, new Scalar(255, 200, 0), 3);
+                            Imgproc.line(thresholdMat, p0_1, p0_0, new Scalar(255, 200, 0), 3);
+                            Imgproc.putText(thresholdMat, "p0_0",  p0_0, Core.FONT_HERSHEY_PLAIN, 3, new Scalar(255, 100, 0), 3);
+                            Imgproc.putText(thresholdMat, "p1_0",  p1_0, Core.FONT_HERSHEY_PLAIN, 3, new Scalar(255, 100, 0), 3);
+                            Imgproc.putText(thresholdMat, "p1_1",  p1_1, Core.FONT_HERSHEY_PLAIN, 3, new Scalar(255, 100, 0), 3);
+                            Imgproc.putText(thresholdMat, "p0_1",  p0_1, Core.FONT_HERSHEY_PLAIN, 3, new Scalar(255, 100, 0), 3);
+//                            // Figure out the objectPoints
+//                            MatOfPoint3f objectPoints = new MatOfPoint3f();
+//                            double halfSize = QR_CODE_SIZE_METERS / 2.0;
+//                            List<Point3> objPoints = new ArrayList<>();
+//
+//                            // Add 4 corners of the 3D QR code to the Array
+//                            objPoints.add(new Point3(-halfSize, -halfSize, 0));
+//                            objPoints.add(new Point3(-halfSize, halfSize, 0));
+//                            objPoints.add(new Point3(halfSize, halfSize, 0));
+//                            objPoints.add(new Point3(halfSize, -halfSize, 0));
+//                            // Convert the Array to a Matrix
+//                            objectPoints.fromList(objPoints);
+//
+//                            // Get the imagePoints from the image
+//                            MatOfPoint2f cubeShadowPoints = new MatOfPoint2f();
+//                            List<Point> imgPoints = new ArrayList<>();
+//                            imgPoints.add(new Point(-halfSize, -halfSize));
+//                            imgPoints.add(new Point(-halfSize,  halfSize));
+//                            imgPoints.add(new Point(halfSize,   halfSize));
+//                            imgPoints.add(new Point(halfSize,  -halfSize));
+//                            cubeShadowPoints.fromList(imgPoints);
+//
+//
+//                            // Get the camera Matrix parameters
+//                            Mat cameraMatrix = new Mat();
+//
+//                            // Get the distortion coefficients
+//                            MatOfDouble distCoeffs = new MatOfDouble();
+//
+//
+//                            // Initialise the rvec and the tvec
+//                            Mat rvec = new Mat();
+//                            Mat tvec = new Mat();
+//
+//                            // Solve PnP
+//                            Calib3d.solvePnP(
+//                                    objectPoints,
+//                                    cubeShadowPoints,
+//                                    cameraMatrix,
+//                                    distCoeffs,
+//                                    rvec,
+//                                    tvec
+//                            );
+//
+//                            // Now project a cube back into 2D space, and display it
+//                            MatOfPoint3f cubePoints = new MatOfPoint3f();
+//                            List<Point3> cubePointsArray = new ArrayList<>();
+//
+//                            // the 4 points of the QR Code
+//                            cubePointsArray.add(new Point3(-halfSize, -halfSize, 0));
+//                            cubePointsArray.add(new Point3(-halfSize, halfSize, 0));
+//                            cubePointsArray.add(new Point3(halfSize, halfSize, 0));
+//                            cubePointsArray.add(new Point3(halfSize, -halfSize, 0));
+//
+//                            // The 4 points directly above the QR Code
+//                            cubePointsArray.add(new Point3(-halfSize, -halfSize, QR_CODE_SIZE_METERS));
+//                            cubePointsArray.add(new Point3(-halfSize, halfSize, QR_CODE_SIZE_METERS));
+//                            cubePointsArray.add(new Point3(halfSize, halfSize, QR_CODE_SIZE_METERS));
+//                            cubePointsArray.add(new Point3(halfSize, -halfSize, QR_CODE_SIZE_METERS));
+//
+//                            // Add the 8 corners of the cube to the cubePoints Matrix
+//                            cubePoints.fromList(cubePointsArray);
+//
+//                            cubeShadowPoints = new MatOfPoint2f();
+//
+//
+//                            // TODO I've got no clue what the K and D matrices are...
+//                            Mat K = new Mat();
+//                            Mat D = new Mat();
+//                            Calib3d.projectPoints(
+//                                    cubePoints,
+//                                    cubeShadowPoints,
+//                                    rvec,
+//                                    tvec,
+//                                    K,
+//                                    D
+//                            );
 
                         } else {
                             Imgproc.putText(contourMat,
-                                    "Too Many Points: " + centres.size(),
-                                    new Point(contourMat.width() / 2, contourMat.height() / 2),
+                                    "Wrong number of points: " + centres.size(),
+                                    new Point(50, 50),
                                     Core.FONT_HERSHEY_PLAIN,
-                                    1,
+                                    2,
                                     new Scalar(255, 58, 88),
-                                    4);
+                                    2);
                         }
 
 
+                        // Combine the matrices together so they're drawn side by side
                         Mat[] matrixes = new Mat[]{
                                 blurMat,
                                 thresholdMat,
@@ -512,6 +634,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         return imageAnalysis;
 
     }
+
 
     private static double distanceP2P(Point p1, Point p2) {
         return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
